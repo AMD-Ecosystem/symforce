@@ -174,9 +174,8 @@ int GetDeviceId(const py::object& obj) {
     auto interface = obj.attr("__cuda_array_interface__").cast<py::dict>();
     auto data = interface["data"].cast<py::tuple>();
     void* ptr = reinterpret_cast<void*>(data[0].cast<size_t>());
-    // This is a host translation unit, so it uses local cuda*->hip* aliases here
-    // rather than the device-side cuda_to_hip.h (which pulls in hipcub and
-    // __device__ helpers intended for the .cu sources).
+    // This host translation unit calls the HIP runtime directly rather than
+    // including cuda_to_hip.h, which also pulls in hipcub.
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
     hipPointerAttribute_t attrs;
     hipError_t err = hipPointerGetAttributes(&attrs, ptr);
