@@ -35,6 +35,14 @@
 #define cudaGetDevice           hipGetDevice
 #define cudaPointerGetAttributes hipPointerGetAttributes
 #define cudaPointerAttributes   hipPointerAttribute_t
+#define cudaGetDeviceCount      hipGetDeviceCount
+#define cudaFuncAttributeMaxDynamicSharedMemorySize hipFuncAttributeMaxDynamicSharedMemorySize
+
+// hipFuncSetAttribute takes the kernel as const void*; CUDA also accepts the kernel itself.
+template <typename T>
+inline hipError_t cudaFuncSetAttribute(T* func, hipFuncAttribute attr, int value) {
+  return hipFuncSetAttribute(reinterpret_cast<const void*>(func), attr, value);
+}
 
 // HIP shared-memory atomics are block-scoped by definition (no inter-block visibility),
 // so atomicAdd_block is equivalent to atomicAdd on shared memory.
