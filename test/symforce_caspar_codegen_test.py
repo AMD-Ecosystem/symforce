@@ -55,6 +55,14 @@ BACKEND_COVERAGE_TEST_DATA_DIR = (
     / "symforce_caspar_backend_coverage_test"
 )
 
+BUILD_FILES_TEST_DATA_DIR = (
+    path_util.symforce_data_root(__file__)
+    / "test"
+    / "symforce_function_codegen_test_data"
+    / symforce.get_symbolic_api()
+    / "symforce_caspar_build_files_test"
+)
+
 KERNEL_FILENAMES = (
     "kernel_caspar_padding_lane_score.cu",
     "kernel_caspar_padding_lane_score.h",
@@ -325,6 +333,27 @@ class SymforceCasparCodegenTest(TestCase):
         )
 
         self.compare_or_update_directory(kernel_dir, BACKEND_COVERAGE_TEST_DATA_DIR)
+
+    @symengine_only
+    def test_generate_build_files(self) -> None:
+        """
+        Keep the generated CMakeLists.txt up to date, with and without Python bindings.  It holds
+        the only generated code that differs between the CUDA and HIP builds.
+        """
+        output_dir = self.make_output_dir("sf_caspar_build_files_")
+        caslib = _make_padding_lane_library()
+
+        build_files_dir = output_dir / "build_files"
+        build_files_dir.mkdir()
+        for python_bindings in (False, True):
+            generated_dir = output_dir / f"python_bindings_{python_bindings}"
+            generated_dir.mkdir()
+            caslib.generate_buildfiles(generated_dir, python_bindings=python_bindings)
+            for path in generated_dir.iterdir():
+                suffix = "_python_bindings" if python_bindings else ""
+                (build_files_dir / f"{path.stem}{suffix}{path.suffix}").write_text(path.read_text())
+
+        self.compare_or_update_directory(build_files_dir, BUILD_FILES_TEST_DATA_DIR)
 
     @symengine_only
     def test_generate_solver(self) -> None:
