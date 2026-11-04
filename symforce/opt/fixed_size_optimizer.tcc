@@ -7,6 +7,7 @@
 
 #include "./assert.h"
 #include "./fixed_size_optimizer.h"
+#include "./internal/optimizer_utils.h"
 
 namespace sym {
 

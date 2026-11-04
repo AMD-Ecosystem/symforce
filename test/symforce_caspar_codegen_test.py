@@ -1,0 +1,351 @@
+# ----------------------------------------------------------------------------
+# SymForce - Copyright 2025, Skydio, Inc.
+# This source code is under the Apache 2.0 license found in the LICENSE file.
+# ----------------------------------------------------------------------------
+
+import symforce
+
+symforce.set_epsilon_to_number()
+
+from pathlib import Path
+
+import sympy
+
+import symforce.symbolic as sf
+from symforce import caspar
+from symforce import path_util
+from symforce import typing as T
+from symforce.caspar import CasparLibrary
+from symforce.caspar import memory as mem
+from symforce.caspar.memory import DType
+from symforce.codegen.format_util import format_cpp
+from symforce.test_util import TestCase
+from symforce.test_util import symengine_only
+from symforce.test_util.backend_coverage_expressions import backend_test_function
+
+TEST_DATA_DIR = (
+    path_util.symforce_data_root(__file__)
+    / "test"
+    / "symforce_function_codegen_test_data"
+    / symforce.get_symbolic_api()
+    / "symforce_caspar_codegen_test"
+)
+
+SOLVER_TEST_DATA_DIR = (
+    path_util.symforce_data_root(__file__)
+    / "test"
+    / "symforce_function_codegen_test_data"
+    / symforce.get_symbolic_api()
+    / "symforce_caspar_solver_test"
+)
+
+TRIDIAGONAL_TEST_DATA_DIR = (
+    path_util.symforce_data_root(__file__)
+    / "test"
+    / "symforce_function_codegen_test_data"
+    / symforce.get_symbolic_api()
+    / "symforce_caspar_tridiagonal_test"
+)
+
+BACKEND_COVERAGE_TEST_DATA_DIR = (
+    path_util.symforce_data_root(__file__)
+    / "test"
+    / "symforce_function_codegen_test_data"
+    / symforce.get_symbolic_api()
+    / "symforce_caspar_backend_coverage_test"
+)
+
+KERNEL_FILENAMES = (
+    "kernel_caspar_padding_lane_score.cu",
+    "kernel_caspar_padding_lane_score.h",
+)
+
+BACKEND_COVERAGE_KERNEL_FILENAMES = (
+    "kernel_backend_test_function.cu",
+    "kernel_backend_test_function.h",
+)
+
+# Functions CUDA has that aren't in backend_test_function's default list, as for the CUDA backend.
+BACKEND_COVERAGE_NON_STANDARD_UNARY_OPS = [
+    sf.sympy.erfc,
+    sf.sympy.loggamma,
+    sf.sympy.erf,
+    sf.sympy.gamma,
+]
+
+# x is positive: CUDA's lgamma is log|gamma(x)|, which SymEngine's loggamma is not for negative x.
+# The points cover both sides of 1, where asin, acos and atanh or acosh are undefined.
+BACKEND_COVERAGE_POINTS = (
+    (0.3, 1.7),
+    (0.85, -0.6),
+    (1.6, 2.5),
+    (3.2, -1.1),
+    (7.3, 0.4),
+)
+
+
+def _make_padding_lane_library() -> CasparLibrary:
+    """
+    Shaped like the OpenCV reprojection factor from symforce-org/symforce#469, whose score kernel
+    LLVM miscompiles without zero-initialized registers.  Simpler kernels don't reproduce it.
+    """
+    caslib = CasparLibrary()
+
+    @caslib.add_factor
+    def caspar_padding_lane(
+        cam_T_world: T.Annotated[sf.Pose3, mem.TunableShared],
+        point: T.Annotated[sf.V3, mem.TunableShared],
+        calibration: T.Annotated[sf.V8, mem.TunableShared],
+        pixel: T.Annotated[sf.V2, mem.ConstantSequential],
+    ) -> sf.V2:
+        fx, fy, cx, cy, k1, k2, p1, p2 = calibration
+
+        point_cam = cam_T_world * point
+        xn = point_cam[0] / point_cam[2]
+        yn = point_cam[1] / point_cam[2]
+
+        r2 = xn * xn + yn * yn
+        radial = 1 + k1 * r2 + k2 * r2 * r2
+        x_d = xn * radial + 2 * p1 * xn * yn + p2 * (r2 + 2 * xn * xn)
+        y_d = yn * radial + p1 * (r2 + 2 * yn * yn) + 2 * p2 * xn * yn
+
+        return sf.V2(fx * x_d + cx, fy * y_d + cy) - pixel
+
+    return caslib
+
+
+def _backend_coverage_outputs(x: sf.Scalar, y: sf.Scalar) -> sf.Matrix:
+    return sf.Matrix(backend_test_function(BACKEND_COVERAGE_NON_STANDARD_UNARY_OPS, x, y))
+
+
+def _make_backend_coverage_library() -> CasparLibrary:
+    """
+    A kernel computing every expression of ``backend_test_function`` from ``x`` and ``y``.
+    """
+    caslib = CasparLibrary(dtype=DType.DOUBLE)
+    output_t = sf.matrix_type_from_shape(
+        _backend_coverage_outputs(sf.Symbol("x"), sf.Symbol("y")).shape
+    )
+
+    @caslib.add_kernel
+    def backend_test_function(
+        x: T.Annotated[sf.V1, mem.ReadSequential],
+        y: T.Annotated[sf.V1, mem.ReadSequential],
+    ) -> T.Annotated[output_t, mem.WriteSequential]:  # type: ignore[valid-type]
+        return _backend_coverage_outputs(x[0], y[0])
+
+    return caslib
+
+
+def _backend_coverage_expected_header() -> str:
+    """
+    The inputs and outputs of ``backend_test_function`` at ``BACKEND_COVERAGE_POINTS``, evaluated
+    by SymPy, with NaN where the output isn't real.
+    """
+    x, y = sf.symbols("x y")
+    outputs = _backend_coverage_outputs(x, y)
+
+    def evaluate(expr: sf.Expr, x_value: float, y_value: float) -> str:
+        # SymEngine can't evalf every function here, so convert to SymPy.  Substitute the exact
+        # values of the doubles, since how SymPy rounds float arguments varies between versions.
+        value = complex(
+            sympy.sympify(expr)
+            .subs({x: sympy.Rational(x_value), y: sympy.Rational(y_value)})
+            .evalf(30)
+        )
+        if value.imag != 0:
+            return "kNaN"
+        return repr(value.real)
+
+    rows = "\n".join(
+        "{"
+        + ", ".join(
+            evaluate(expr, x_value, y_value) for x_value, y_value in BACKEND_COVERAGE_POINTS
+        )
+        + f"}},  // {expr}"
+        for expr in outputs
+    )
+    return f"""\
+#pragma once
+
+#include <limits>
+
+// Generated by symforce_caspar_codegen_test.py.
+namespace caspar_backend_coverage {{
+
+constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+constexpr int kNumPoints = {len(BACKEND_COVERAGE_POINTS)};
+constexpr int kNumOutputs = {outputs.shape[0]};
+constexpr double kX[kNumPoints] = {{{", ".join(repr(p[0]) for p in BACKEND_COVERAGE_POINTS)}}};
+constexpr double kY[kNumPoints] = {{{", ".join(repr(p[1]) for p in BACKEND_COVERAGE_POINTS)}}};
+// Each output at each point.
+constexpr double kExpected[kNumOutputs][kNumPoints] = {{
+{rows}
+}};
+
+}}  // namespace caspar_backend_coverage
+"""
+
+
+def _make_solver_library() -> CasparLibrary:
+    """
+    Rosenbrock converges slowly, so a solve is still progressing after a few iterations.
+    """
+    caslib = CasparLibrary(dtype=DType.DOUBLE)
+
+    @caslib.add_factor
+    def rosenbrock(
+        x: T.Annotated[sf.V2, mem.TunableShared],
+    ) -> sf.V2:
+        return sf.V2(10 * (x[1] - x[0] * x[0]), 1 - x[0])
+
+    return caslib
+
+
+class ChainA(sf.V2):
+    pass
+
+
+class ChainB(sf.V3):
+    pass
+
+
+def _make_tridiagonal_library() -> CasparLibrary:
+    """
+    Two node types, each a chain linked by its own ``Pair`` factor so each gets a block-tridiagonal
+    preconditioner, plus a factor coupling the two types.  Every residual is linear, so one exact
+    Gauss-Newton step reaches the optimum.
+    """
+    caslib = CasparLibrary(dtype=DType.DOUBLE)
+
+    @caslib.add_factor
+    def chain_a_link(
+        a: T.Annotated[mem.Pair[ChainA], mem.TunablePair],
+        weight: T.Annotated[sf.M22, mem.ConstantSequential],
+        offset: T.Annotated[sf.V2, mem.ConstantSequential],
+    ) -> sf.V2:
+        return sf.V2(weight * (a[1] - a[0]) - offset)
+
+    @caslib.add_factor
+    def chain_a_prior(
+        a: T.Annotated[ChainA, mem.TunableShared],
+        target: T.Annotated[sf.V2, mem.ConstantSequential],
+    ) -> sf.V2:
+        return sf.V2(a - target)
+
+    @caslib.add_factor
+    def chain_b_link(
+        b: T.Annotated[mem.Pair[ChainB], mem.TunablePair],
+        weight: T.Annotated[sf.M33, mem.ConstantSequential],
+        offset: T.Annotated[sf.V3, mem.ConstantSequential],
+    ) -> sf.V3:
+        return sf.V3(weight * (b[1] - b[0]) - offset)
+
+    @caslib.add_factor
+    def chain_b_prior(
+        b: T.Annotated[ChainB, mem.TunableShared],
+        target: T.Annotated[sf.V3, mem.ConstantSequential],
+    ) -> sf.V3:
+        return sf.V3(b - target)
+
+    @caslib.add_factor
+    def chain_coupling(
+        a: T.Annotated[ChainA, mem.TunableShared],
+        b: T.Annotated[ChainB, mem.TunableShared],
+        weight: T.Annotated[sf.M23, mem.ConstantSequential],
+        offset: T.Annotated[sf.V2, mem.ConstantSequential],
+    ) -> sf.V2:
+        return sf.V2(a - weight * b - offset)
+
+    return caslib
+
+
+def _generate_solver(caslib: CasparLibrary, output_dir: Path, data_dir: Path) -> Path:
+    """
+    Generate ``caslib`` without Python bindings, formatted, keeping only the files generated for it.
+    """
+    caslib.generate(output_dir, python_bindings=False)
+
+    # The runtime is compiled from its own directory; check in only what was generated.
+    runtime_dir = Path(caspar.__file__).parent / "source" / "runtime"
+    generated_dir = output_dir / "generated"
+    generated_dir.mkdir()
+    for path in sorted(output_dir.glob("*")):
+        if path.suffix not in {".cu", ".cc", ".h", ".cuh"} or (runtime_dir / path.name).exists():
+            continue
+        (generated_dir / path.name).write_text(
+            format_cpp(path.read_text(), str(data_dir / path.name))
+        )
+    return generated_dir
+
+
+class SymforceCasparCodegenTest(TestCase):
+    """
+    Tests the CUDA kernels generated by caspar.
+    """
+
+    @symengine_only
+    def test_generate_padding_lane_kernel(self) -> None:
+        """
+        Keep the kernel caspar_padding_lane_cuda_test.cc runs up to date.
+        """
+        output_dir = self.make_output_dir("sf_caspar_padding_lane_")
+        _make_padding_lane_library().generate(output_dir, python_bindings=False)
+
+        kernel_dir = output_dir / "kernel"
+        kernel_dir.mkdir()
+        for name in KERNEL_FILENAMES:
+            # Format against the checked-in path, to pick up SymForce's clang-format config.
+            content = (output_dir / name).read_text()
+            (kernel_dir / name).write_text(format_cpp(content, str(TEST_DATA_DIR / name)))
+
+        self.compare_or_update_directory(kernel_dir, TEST_DATA_DIR)
+
+    @symengine_only
+    def test_generate_backend_coverage_kernel(self) -> None:
+        """
+        Keep the kernel and expected values caspar_backend_coverage_cuda_test.cc uses up to date.
+        """
+        output_dir = self.make_output_dir("sf_caspar_backend_coverage_")
+        _make_backend_coverage_library().generate(output_dir, python_bindings=False)
+
+        kernel_dir = output_dir / "kernel"
+        kernel_dir.mkdir()
+        for name in BACKEND_COVERAGE_KERNEL_FILENAMES:
+            content = (output_dir / name).read_text()
+            (kernel_dir / name).write_text(
+                format_cpp(content, str(BACKEND_COVERAGE_TEST_DATA_DIR / name))
+            )
+        expected_name = "backend_test_function_expected.h"
+        (kernel_dir / expected_name).write_text(
+            format_cpp(
+                _backend_coverage_expected_header(),
+                str(BACKEND_COVERAGE_TEST_DATA_DIR / expected_name),
+            )
+        )
+
+        self.compare_or_update_directory(kernel_dir, BACKEND_COVERAGE_TEST_DATA_DIR)
+
+    @symengine_only
+    def test_generate_solver(self) -> None:
+        """
+        Keep the solver caspar_solver_cuda_test.cc runs up to date.
+        """
+        output_dir = self.make_output_dir("sf_caspar_solver_")
+        generated_dir = _generate_solver(_make_solver_library(), output_dir, SOLVER_TEST_DATA_DIR)
+        self.compare_or_update_directory(generated_dir, SOLVER_TEST_DATA_DIR)
+
+    @symengine_only
+    def test_generate_tridiagonal_solver(self) -> None:
+        """
+        Keep the solver caspar_tridiagonal_cuda_test.cc runs up to date.
+        """
+        output_dir = self.make_output_dir("sf_caspar_tridiagonal_")
+        generated_dir = _generate_solver(
+            _make_tridiagonal_library(), output_dir, TRIDIAGONAL_TEST_DATA_DIR
+        )
+        self.compare_or_update_directory(generated_dir, TRIDIAGONAL_TEST_DATA_DIR)
+
+
+if __name__ == "__main__":
+    SymforceCasparCodegenTest.main()

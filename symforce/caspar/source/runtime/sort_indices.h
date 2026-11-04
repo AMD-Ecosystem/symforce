@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <sys/types.h>
+
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
 #include <hip/hip_runtime.h>
 #else
