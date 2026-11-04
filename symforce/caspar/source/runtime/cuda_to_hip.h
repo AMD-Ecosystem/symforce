@@ -128,6 +128,9 @@ __device__ __forceinline__ T labeled_reduce_sum(GroupT group, T val, LabelT labe
 #else  // CUDA path
 
 #include <cuda_runtime.h>
+
+// Host-only translation units (e.g. code using the generated headers) get just the runtime API.
+#if defined(__CUDACC__)
 #include <cooperative_groups.h>
 #include <cooperative_groups/details/partitioning.h>
 #include <cooperative_groups/reduce.h>
@@ -138,5 +141,6 @@ namespace cg = cooperative_groups;
 
 // On CUDA, cg::reduce is available
 #define CG_REDUCE_SUM(group, val) cg::reduce(group, val, cg::plus<decltype(val)>())
+#endif
 
 #endif
