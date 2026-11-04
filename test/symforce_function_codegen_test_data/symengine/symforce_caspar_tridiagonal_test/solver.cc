@@ -683,6 +683,7 @@ void GraphSolver::DoUpdateStep() {
 
 void GraphSolver::DoUpdateRFirst() {
   Zero(solver__r_0_norm2_tot_, solver__r_0_norm2_tot_ + 1);
+  Zero(solver__r_kp1_norm2_tot_, solver__r_kp1_norm2_tot_ + 1);
 
   ChainAUpdateRFirst(nodes__ChainA__r_k_, ChainA_num_, nodes__ChainA__w_, ChainA_num_,
                      solver__neg_alpha_, nodes__ChainA__r_k_, ChainA_num_, solver__r_0_norm2_tot_,

@@ -369,6 +369,7 @@ void GraphSolver::DoUpdateStep() {
 
 void GraphSolver::DoUpdateRFirst() {
   Zero(solver__r_0_norm2_tot_, solver__r_0_norm2_tot_ + 1);
+  Zero(solver__r_kp1_norm2_tot_, solver__r_kp1_norm2_tot_ + 1);
 
   Matrix21UpdateRFirst(nodes__Matrix21__r_k_, Matrix21_num_, nodes__Matrix21__w_, Matrix21_num_,
                        solver__neg_alpha_, nodes__Matrix21__r_k_, Matrix21_num_,
