@@ -8,8 +8,8 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <cuda_runtime.h>
 
+#include "cuda_to_hip.h"
 #include "kernel_caspar_padding_lane_score.h"
 #include "shared_indices.h"
 

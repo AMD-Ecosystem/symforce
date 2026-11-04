@@ -9,8 +9,8 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <cuda_runtime.h>
 
+#include "cuda_to_hip.h"
 #include "solver.h"
 
 namespace {

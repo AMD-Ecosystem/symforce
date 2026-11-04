@@ -47,7 +47,7 @@ target_compile_definitions(
 
 file(GLOB SYMFORCE_TEST_CC_SOURCES CONFIGURE_DEPENDS *_test.cc)
 
-# *_cuda_test.cc tests are built below, only when a CUDA compiler is available.
+# *_cuda_test.cc tests are built below, only when a CUDA or HIP compiler is available.
 file(GLOB SYMFORCE_CUDA_TEST_CC_SOURCES CONFIGURE_DEPENDS *_cuda_test.cc)
 list(REMOVE_ITEM SYMFORCE_TEST_CC_SOURCES ${SYMFORCE_CUDA_TEST_CC_SOURCES})
 
@@ -80,9 +80,21 @@ endforeach()
 
 include(CheckLanguage)
 check_language(CUDA)
-if(CMAKE_CUDA_COMPILER)
-  enable_language(CUDA)
-  find_package(CUDAToolkit REQUIRED)
+if(NOT CMAKE_CUDA_COMPILER AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21)
+  # Without CUDA, build the same tests for AMD GPUs with HIP.  With no AMD GPU on the build host,
+  # pass -DCMAKE_HIP_ARCHITECTURES (e.g. gfx90a) to build them anyway.
+  check_language(HIP)
+endif()
+
+if(CMAKE_CUDA_COMPILER OR CMAKE_HIP_COMPILER)
+  if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+  else()
+    enable_language(HIP)
+    find_package(hip REQUIRED)
+    find_package(hipcub REQUIRED)
+  endif()
 
   set(CASPAR_RUNTIME_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../symforce/caspar/source/runtime)
   set(CASPAR_TEST_DATA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/symforce_function_codegen_test_data/symengine)
@@ -92,11 +104,18 @@ if(CMAKE_CUDA_COMPILER)
     ${CASPAR_RUNTIME_DIR}/sort_indices.cu
     ${CASPAR_RUNTIME_DIR}/solver_tools.cu
   )
-  set_target_properties(caspar_test_runtime PROPERTIES
-    CUDA_ARCHITECTURES 75  # Minimum for cooperative_groups::reduce
-  )
   target_include_directories(caspar_test_runtime PUBLIC ${CASPAR_RUNTIME_DIR})
-  target_link_libraries(caspar_test_runtime PUBLIC CUDA::cudart)
+  if(CMAKE_CUDA_COMPILER)
+    set_target_properties(caspar_test_runtime PROPERTIES
+      CUDA_ARCHITECTURES 75  # Minimum for cooperative_groups::reduce
+    )
+    target_link_libraries(caspar_test_runtime PUBLIC CUDA::cudart)
+  else()
+    get_target_property(CASPAR_RUNTIME_SOURCES caspar_test_runtime SOURCES)
+    set_source_files_properties(${CASPAR_RUNTIME_SOURCES} PROPERTIES LANGUAGE HIP)
+    target_compile_definitions(caspar_test_runtime PUBLIC USE_HIP)
+    target_link_libraries(caspar_test_runtime PUBLIC hip::host hip::hipcub)
+  endif()
 
   # Each caspar_<name>_cuda_test.cc runs the code generated into symforce_caspar_<name>_test,
   # except caspar_padding_lane_cuda_test, whose kernel symforce_caspar_codegen_test generates
@@ -117,6 +136,10 @@ if(CMAKE_CUDA_COMPILER)
     file(GLOB DATA_SOURCES CONFIGURE_DEPENDS ${DATA_DIR}/*.cu ${DATA_DIR}/*.cc)
 
     add_executable(${TARGET_NAME} ${SOURCE_FILE} ${DATA_SOURCES})
+    if(CMAKE_HIP_COMPILER)
+      # The test and generated .cc files include the HIP runtime too.
+      set_source_files_properties(${SOURCE_FILE} ${DATA_SOURCES} PROPERTIES LANGUAGE HIP)
+    endif()
     set_target_properties(${TARGET_NAME} PROPERTIES
       CUDA_ARCHITECTURES 75
       OUTPUT_NAME ${BINARY_NAME}

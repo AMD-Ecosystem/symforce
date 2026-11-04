@@ -10,8 +10,8 @@
 #include <Eigen/Core>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
-#include <cuda_runtime.h>
 
+#include "cuda_to_hip.h"
 #include "symforce_caspar_tridiagonal_test/solver.h"
 
 namespace {

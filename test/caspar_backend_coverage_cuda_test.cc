@@ -9,9 +9,9 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
-#include <cuda_runtime.h>
 
 #include "backend_test_function_expected.h"
+#include "cuda_to_hip.h"
 #include "kernel_backend_test_function.h"
 
 namespace {
