@@ -406,10 +406,6 @@ __forceinline__ __device__ void SumStore(StorageT* const shared_tmp, StorageT* c
       shared_tmp[offset] = tot;
     }
   }
-  // The second-stage tile reads inout_shared above; without a trailing barrier the
-  // buffer is not safe to reuse until the next block-wide sync, which callers were
-  // implicitly relied on to provide.
-  __syncthreads();
 }
 
 template <typename StorageT>
