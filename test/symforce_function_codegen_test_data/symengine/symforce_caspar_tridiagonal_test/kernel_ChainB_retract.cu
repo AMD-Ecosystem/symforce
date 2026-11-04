@@ -1,16 +1,9 @@
 #include <stdexcept>
 #include <string>
 
-#include <cooperative_groups.h>
-#include <cooperative_groups/details/partitioning.h>
-#include <cooperative_groups/memcpy_async.h>
-#include <cooperative_groups/reduce.h>
-#include <cuda_runtime.h>
-
+#include "cuda_to_hip.h"
 #include "kernel_ChainB_retract.h"
 #include "memops.cuh"
-
-namespace cg = cooperative_groups;
 
 namespace caspar {
 

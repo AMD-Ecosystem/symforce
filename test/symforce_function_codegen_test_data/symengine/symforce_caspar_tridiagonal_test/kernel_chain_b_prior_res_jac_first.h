@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cuda_runtime.h>
-
+#include "cuda_to_hip.h"
 #include "shared_indices.h"
 
 namespace caspar {

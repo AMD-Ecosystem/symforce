@@ -3,8 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include <cuda_runtime.h>
-
+#include "cuda_to_hip.h"
 #include "shared_indices.h"
 #include "solver_params.h"
 
