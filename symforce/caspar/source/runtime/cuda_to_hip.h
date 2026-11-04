@@ -13,29 +13,29 @@
 
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
 
-#include <hip/hip_runtime.h>
 #include <hip/hip_cooperative_groups.h>
+#include <hip/hip_runtime.h>
 #include <hipcub/hipcub.hpp>
 
 // CUDA runtime API -> HIP runtime API
-#define cudaMalloc              hipMalloc
-#define cudaFree                hipFree
-#define cudaMemset              hipMemset
-#define cudaMemcpy              hipMemcpy
+#define cudaMalloc hipMalloc
+#define cudaFree hipFree
+#define cudaMemset hipMemset
+#define cudaMemcpy hipMemcpy
 #define cudaMemcpyDeviceToDevice hipMemcpyDeviceToDevice
-#define cudaMemcpyDeviceToHost  hipMemcpyDeviceToHost
-#define cudaMemcpyHostToDevice  hipMemcpyHostToDevice
-#define cudaError_t             hipError_t
-#define cudaSuccess             hipSuccess
-#define cudaStream_t            hipStream_t
-#define cudaDeviceSynchronize   hipDeviceSynchronize
-#define cudaGetLastError        hipGetLastError
-#define cudaGetErrorString      hipGetErrorString
-#define cudaSetDevice           hipSetDevice
-#define cudaGetDevice           hipGetDevice
+#define cudaMemcpyDeviceToHost hipMemcpyDeviceToHost
+#define cudaMemcpyHostToDevice hipMemcpyHostToDevice
+#define cudaError_t hipError_t
+#define cudaSuccess hipSuccess
+#define cudaStream_t hipStream_t
+#define cudaDeviceSynchronize hipDeviceSynchronize
+#define cudaGetLastError hipGetLastError
+#define cudaGetErrorString hipGetErrorString
+#define cudaSetDevice hipSetDevice
+#define cudaGetDevice hipGetDevice
 #define cudaPointerGetAttributes hipPointerGetAttributes
-#define cudaPointerAttributes   hipPointerAttribute_t
-#define cudaGetDeviceCount      hipGetDeviceCount
+#define cudaPointerAttributes hipPointerAttribute_t
+#define cudaGetDeviceCount hipGetDeviceCount
 #define cudaFuncAttributeMaxDynamicSharedMemorySize hipFuncAttributeMaxDynamicSharedMemorySize
 
 // hipFuncSetAttribute takes the kernel as const void*; CUDA also accepts the kernel itself.
@@ -88,7 +88,8 @@ __device__ __forceinline__ unsigned long long match_any_mask(GroupT group, Label
 // and have exactly one lane per unique label perform the atomic.
 // Returns the reduced value and sets is_leader=true for exactly one lane per label.
 template <typename GroupT, typename T, typename LabelT>
-__device__ __forceinline__ T labeled_reduce_sum(GroupT group, T val, LabelT label, bool& is_leader) {
+__device__ __forceinline__ T labeled_reduce_sum(GroupT group, T val, LabelT label,
+                                                bool& is_leader) {
   // Get mask of lanes with same label
   unsigned long long same_label_mask = group.match_any(label);
 
@@ -123,7 +124,7 @@ __device__ __forceinline__ T labeled_reduce_sum(GroupT group, T val, LabelT labe
 // Macros to replace cg::reduce calls (used in device code)
 #define CG_REDUCE_SUM(group, val) caspar_hip::reduce_sum(group, val)
 #define CG_LABELED_REDUCE_SUM(group, val, label, is_leader) \
-    caspar_hip::labeled_reduce_sum(group, val, label, is_leader)
+  caspar_hip::labeled_reduce_sum(group, val, label, is_leader)
 
 #else  // CUDA path
 
@@ -133,8 +134,8 @@ __device__ __forceinline__ T labeled_reduce_sum(GroupT group, T val, LabelT labe
 #if defined(__CUDACC__)
 #include <cooperative_groups.h>
 #include <cooperative_groups/details/partitioning.h>
-#include <cooperative_groups/reduce.h>
 #include <cooperative_groups/memcpy_async.h>
+#include <cooperative_groups/reduce.h>
 #include <cub/cub.cuh>
 
 namespace cg = cooperative_groups;
