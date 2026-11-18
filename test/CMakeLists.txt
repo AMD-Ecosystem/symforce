@@ -114,7 +114,12 @@ if(CMAKE_CUDA_COMPILER OR CMAKE_HIP_COMPILER)
     get_target_property(CASPAR_RUNTIME_SOURCES caspar_test_runtime SOURCES)
     set_source_files_properties(${CASPAR_RUNTIME_SOURCES} PROPERTIES LANGUAGE HIP)
     target_compile_definitions(caspar_test_runtime PUBLIC USE_HIP)
-    target_link_libraries(caspar_test_runtime PUBLIC hip::host hip::hipcub)
+    # hip::hipcub also carries hip::device, whose -x hip would reach the host-compiled .cc test
+    # sources below.  hipCUB and rocPRIM are header-only, so take just their headers.
+    target_link_libraries(caspar_test_runtime PUBLIC hip::host roc::rocprim)
+    target_include_directories(caspar_test_runtime PUBLIC
+      $<TARGET_PROPERTY:hip::hipcub,INTERFACE_INCLUDE_DIRECTORIES>
+    )
   endif()
 
   # Each caspar_<name>_cuda_test.cc runs the code generated into symforce_caspar_<name>_test,
@@ -137,8 +142,12 @@ if(CMAKE_CUDA_COMPILER OR CMAKE_HIP_COMPILER)
 
     add_executable(${TARGET_NAME} ${SOURCE_FILE} ${DATA_SOURCES})
     if(CMAKE_HIP_COMPILER)
-      # The test and generated .cc files include the HIP runtime too.
-      set_source_files_properties(${SOURCE_FILE} ${DATA_SOURCES} PROPERTIES LANGUAGE HIP)
+      # Only the .cu files are HIP.  The test and generated .cc files stay with the host C++
+      # compiler, as in the CUDA build, so the generated headers are checked to be includable
+      # from host code.
+      set(HIP_SOURCES ${DATA_SOURCES})
+      list(FILTER HIP_SOURCES INCLUDE REGEX "\\.cu$")
+      set_source_files_properties(${HIP_SOURCES} PROPERTIES LANGUAGE HIP)
     endif()
     set_target_properties(${TARGET_NAME} PROPERTIES
       CUDA_ARCHITECTURES 75

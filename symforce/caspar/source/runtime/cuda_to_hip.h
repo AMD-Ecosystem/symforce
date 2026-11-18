@@ -13,9 +13,13 @@
 
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
 
-#include <hip/hip_cooperative_groups.h>
 #include <hip/hip_runtime.h>
+
+// Host-only translation units (e.g. code using the generated headers) get just the runtime API.
+#if defined(__HIPCC__)
+#include <hip/hip_cooperative_groups.h>
 #include <hipcub/hipcub.hpp>
+#endif
 
 // CUDA runtime API -> HIP runtime API
 #define cudaMalloc hipMalloc
@@ -48,8 +52,10 @@ inline hipError_t cudaFuncSetAttribute(T* func, hipFuncAttribute attr, int value
 // so atomicAdd_block is equivalent to atomicAdd on shared memory.
 #define atomicAdd_block atomicAdd
 
+#if defined(__HIPCC__)
 // CUB -> hipCUB namespace
 namespace cub = hipcub;
+#endif
 
 #else  // CUDA path
 
