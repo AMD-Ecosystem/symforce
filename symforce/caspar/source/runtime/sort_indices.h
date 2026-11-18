@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <sys/types.h>
+#include <cstddef>
 
 #if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
 #include <hip/hip_runtime.h>
@@ -17,15 +17,16 @@ namespace caspar {
 
 size_t SortIndicesGetTmpNbytes(size_t problem_size);
 
-void SortIndices(void* tmp_storage, size_t tmp_storage_bytes, const uint* keys_in, uint* sorted_out,
-                 uint* target_out, uint* argsort_out, size_t problem_size);
+void SortIndices(void* tmp_storage, size_t tmp_storage_bytes, const unsigned int* keys_in,
+                 unsigned int* sorted_out, unsigned int* target_out, unsigned int* argsort_out,
+                 size_t problem_size);
 
 size_t SortKeysGetTmpNbytes(size_t problem_size);
 
-void SortKeys(void* tmp_storage, size_t tmp_storage_bytes, const uint* keys_in, uint* sorted_out,
-              size_t problem_size);
+void SortKeys(void* tmp_storage, size_t tmp_storage_bytes, const unsigned int* keys_in,
+              unsigned int* sorted_out, size_t problem_size);
 
-void SelectIndex(const uint* const input, const uint* const selections, uint* const output,
-                 size_t problem_size);
+void SelectIndex(const unsigned int* const input, const unsigned int* const selections,
+                 unsigned int* const output, size_t problem_size);
 
 }  // namespace caspar

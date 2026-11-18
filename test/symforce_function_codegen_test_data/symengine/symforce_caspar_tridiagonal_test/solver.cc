@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 #include "caspar_mappings.h"
 #include "kernel_ChainA_alpha_denominator_or_beta_numerator.h"
